@@ -1,0 +1,219 @@
+<?php
+require_once('PagefilesSecure.php');
+require_once('PagefileSecure.php');
+
+/**
+ * FieldtypeSecureFile
+ * ProcessWire FieldType storing files in a customized location, outside the web root.
+ *
+ * @author Stefan Wanzenried <stefan.wanzenried@gmail.com>
+ * @license http://www.gnu.org/licenses/gpl-2.0.txt GNU General Public License, version 2
+ * @version 1.0
+ */
+class FieldtypeSecureFile extends FieldtypeFile
+{
+
+    const GET_VAR_DOWNLOAD = 'ftsd';
+
+
+    public function __construct()
+    {
+        parent::__construct();
+        $this->defaultInputfieldClass = 'InputfieldFile';
+    }
+
+
+    /**
+     * @return array
+     */
+    public static function getModuleInfo()
+    {
+        return array(
+            'title' => __('Secure File', __FILE__),
+            'version' => 100,
+            'summary' => __('Store one or more files in a customized location, e.g. outside of the web root', __FILE__),
+            'autoload' => true,
+            'author' => 'Stefan Wanzenried (Wanze)'
+        );
+    }
+
+
+    public function init()
+    {
+        $this->addHook('PagefilesManager::securePath', $this, 'hookGetSecurePath');
+        $this->addHookAfter('InputfieldFile::renderItem', $this, 'hookRenderItem');
+        if (isset($_GET[self::GET_VAR_DOWNLOAD])) {
+            $this->addHookBefore('ProcessPageEdit::execute', $this, 'hookDownloadFile');
+        }
+    }
+
+
+    /**
+     * Return the secure path of a page based on the path settings in a Secure File field.
+     *
+     * @param HookEvent $event
+     * @return string
+     * @throws WireException
+     */
+    public function hookGetSecurePath(HookEvent $event)
+    {
+        /** @var PagefilesManager $manager */
+        /** @var Field $field */
+        $manager = $event->object;
+        $field = $event->arguments(0);
+        $storageLocation = rtrim($field->get('storageLocation'), '/') . '/';
+        if (!is_dir($storageLocation) || !is_writable($storageLocation)) {
+            // We fail because the user did not manually create the folder where the files are stored.
+            // Since we create folders recursively below, be sure that the location is correct.
+            throw new WireException("Secure File: Path '{$storageLocation}' does not exist or is not writeable");
+        }
+        $pathPage = $manager->path();
+        $pathFiles = $this->wire('config')->paths->files;
+        $path = $storageLocation . substr($pathPage, strlen($pathFiles));
+        if (!is_dir($path)) {
+            wireMkdir($path, true);
+        }
+        $event->return = $path;
+    }
+
+
+    /**
+     * Return markup for a rendered Pagefile Secure.
+     * Remove the link and add an additional download link.
+     *
+     * @param HookEvent $event
+     */
+    public function hookRenderItem(HookEvent $event)
+    {
+        /** @var PagefileSecure $pagefile */
+        $pagefile = $event->arguments('pagefile');
+        if (!$pagefile instanceof PagefileSecure) {
+            return;
+        }
+        $markup = $event->return;
+        $markup = preg_replace("/<a class='InputfieldFileName'[^>]*>(.*)<\/a>/", "$1", $markup);
+        if ($pagefile->field->get('allowDownloadInAdmin') && $pagefile->isDownloadable()) {
+            $segments = array(
+                'id' => $this->wire('input')->get('id'),
+                self::GET_VAR_DOWNLOAD => urlencode($pagefile->basename),
+            );
+            $link = $this->wire('page')->url . '?' . http_build_query($segments);
+            $markup .= "<div class='FieldtypeSecureFileDownload InputfieldFileData'><a href='{$link}'><i class='fa fa-download'></i> " . $this->_('Download File') . "</a></div>";
+        }
+        $event->return = $markup;
+    }
+
+
+    /**
+     * Download a secure file, requested from ProcessPageEdit.
+     *
+     * @param HookEvent $event
+     */
+    public function hookDownloadFile(HookEvent $event)
+    {
+        /** @var ProcessPageEdit $object */
+        $object = $event->object;
+        $page = $object->getPage();
+        $basename = $this->wire('sanitizer')->selectorValue(urldecode($this->wire('input')->get(self::GET_VAR_DOWNLOAD)));
+        foreach ($page->fields as $field) {
+            if (!$field->type instanceof FieldtypeSecureFile) {
+                continue;
+            }
+            /** @var PagefileSecure $file */
+            $file = $page->get($field->name)->findOne("basename=$basename");
+            if ($file) {
+                $file->download(); // Access check performed by this method
+            }
+        }
+    }
+
+
+    /**
+     * @param Page $page
+     * @param Field $field
+     * @param int|object|string|WireArray $value
+     * @return array|int|mixed|object|string|WireArray
+     */
+    public function sanitizeValue(Page $page, Field $field, $value)
+    {
+        if ($value instanceof PagefilesSecure) return $value;
+
+        return parent::sanitizeValue($page, $field, $value);
+    }
+
+
+    /**
+     * @param Page $page
+     * @param Field $field
+     * @return PagefilesSecure
+     */
+    public function getBlankValue(Page $page, Field $field)
+    {
+        $pagefiles = new PagefilesSecure($page);
+        $pagefiles->setField($field);
+        $pagefiles->setTrackChanges(true);
+
+        return $pagefiles;
+    }
+
+
+    /**
+     * Returns a blank Pagefile instance, which may be another type of Pagefile (i.e. a Pageimage)
+     *
+     * This method ensures that the correct type of items are populated by wakeupValue()
+     *
+     * @param Pagefiles $pagefiles
+     * @param string $filename
+     * @return PagefileSecure
+     */
+    protected function getBlankPagefile(Pagefiles $pagefiles, $filename)
+    {
+        return new PagefileSecure($pagefiles, $filename);
+    }
+
+
+    /**
+     * @param Field $field
+     * @return InputfieldWrapper
+     */
+    public function ___getConfigInputfields(Field $field)
+    {
+        $inputfields = parent::___getConfigInputfields($field);
+
+        $fStorage = $this->modules->get('InputfieldText');
+        $fStorage->attr('name', 'storageLocation');
+        $fStorage->attr('value', $field->get('storageLocation'));
+        $fStorage->label = $this->_('Storage Location');
+        $fStorage->description = $this->_('Enter a path outside the web root where the files are stored.');
+        $fStorage->notes = $this->_('You need to create the directory manually and make sure that the user running the web server has write permission.');
+        $fStorage->required = 1;
+        $inputfields->prepend($fStorage);
+
+        /** @var InputfieldAsmSelect $fRoles */
+        $fRoles = $this->modules->get('InputfieldAsmSelect');
+        $fRoles->label = $this->_('Roles allowing to download a secure file');
+        $fRoles->description = $this->_('Users with a role selected here are able to download the files if a download is requested via the API.');
+        $fRoles->notes = sprintf($this->_('To download a file, call the %s method.'), 'PagefileSecure::download()');
+        $options = array();
+        foreach ($this->wire('roles') as $role) {
+            if ($role->id == $this->wire('config')->superUserRolePageID) continue;
+            $options[$role->id] = $role->name;
+        }
+        $fRoles->addOptions($options);
+        $fRoles->attr('name', 'roles');
+        $fRoles->attr('value', $field->get('roles'));
+        $inputfields->insertAfter($fRoles, $fStorage);
+
+        $fDownload = $this->modules->get('InputfieldCheckbox');
+        $fDownload->attr('name', 'allowDownloadInAdmin');
+        $fDownload->attr('value', $field->get('allowDownloadInAdmin'));
+        if ($field->get('allowDownloadInAdmin')) {
+            $fDownload->attr('checked', 'checked');
+        }
+        $fDownload->label = $this->_('Allow Download in Admin');
+        $fDownload->description = $this->_('If checked, users having a role selected above can download the files when editing a page.');
+        $inputfields->insertAfter($fDownload, $fRoles);
+
+        return $inputfields;
+    }
+}
