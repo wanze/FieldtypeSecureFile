@@ -180,6 +180,11 @@ class FieldtypeSecureFile extends FieldtypeFile
     {
         $inputfields = parent::___getConfigInputfields($field);
 
+        // Only allow InputfieldFile as Inputfield
+        $fInputfield = $inputfields->get('inputfieldClass');
+        $fInputfield->attr('disabled', 'disabled');
+        $fInputfield->notes = $this->_('Currently, InputfieldFile is the only supported Inputfield for secure files');
+
         $fStorage = $this->modules->get('InputfieldText');
         $fStorage->attr('name', 'storageLocation');
         $fStorage->attr('value', $field->get('storageLocation'));
