@@ -32,7 +32,6 @@ class FieldtypeSecureFile extends FieldtypeFile
             'title' => __('Secure File', __FILE__),
             'version' => 100,
             'summary' => __('Store one or more files in a customized location, e.g. outside of the web root', __FILE__),
-            'autoload' => true,
             'author' => 'Stefan Wanzenried (Wanze)'
         );
     }
