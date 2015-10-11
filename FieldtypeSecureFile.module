@@ -8,12 +8,17 @@ require_once('PagefileSecure.php');
  *
  * @author Stefan Wanzenried <stefan.wanzenried@gmail.com>
  * @license http://www.gnu.org/licenses/gpl-2.0.txt GNU General Public License, version 2
- * @version 1.0
+ * @version 1.0.1
  */
 class FieldtypeSecureFile extends FieldtypeFile
 {
 
     const GET_VAR_DOWNLOAD = 'ftsd';
+
+    /**
+     * @var array
+     */
+    protected static $allowedInputFields = array('InputfieldFile');
 
 
     public function __construct()
@@ -30,7 +35,7 @@ class FieldtypeSecureFile extends FieldtypeFile
     {
         return array(
             'title' => __('Secure File', __FILE__),
-            'version' => 100,
+            'version' => 101,
             'summary' => __('Store one or more files in a customized location, e.g. outside of the web root', __FILE__),
             'author' => 'Stefan Wanzenried (Wanze)'
         );
@@ -181,7 +186,12 @@ class FieldtypeSecureFile extends FieldtypeFile
 
         // Only allow InputfieldFile as Inputfield
         $fInputfield = $inputfields->get('inputfieldClass');
-        $fInputfield->attr('disabled', 'disabled');
+        $options = $fInputfield->getOptions();
+        foreach ($options as $option => $title) {
+            if (!in_array($option, static::$allowedInputFields)) {
+                $fInputfield->removeOption($option);
+            }
+        }
         $fInputfield->notes = $this->_('Currently, InputfieldFile is the only supported Inputfield for secure files');
 
         $fStorage = $this->modules->get('InputfieldText');
