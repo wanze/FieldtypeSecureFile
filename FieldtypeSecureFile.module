@@ -1,6 +1,6 @@
 <?php
-require_once('PagefilesSecure.php');
-require_once('PagefileSecure.php');
+require_once(__DIR__ . '/PagefilesSecure.php');
+require_once(__DIR__ . '/PagefileSecure.php');
 
 /**
  * FieldtypeSecureFile
@@ -8,7 +8,7 @@ require_once('PagefileSecure.php');
  *
  * @author Stefan Wanzenried <stefan.wanzenried@gmail.com>
  * @license http://www.gnu.org/licenses/gpl-2.0.txt GNU General Public License, version 2
- * @version 1.0.1
+ * @version 1.0.2
  */
 class FieldtypeSecureFile extends FieldtypeFile
 {
@@ -35,7 +35,7 @@ class FieldtypeSecureFile extends FieldtypeFile
     {
         return array(
             'title' => __('Secure File', __FILE__),
-            'version' => 101,
+            'version' => 102,
             'summary' => __('Store one or more files in a customized location, e.g. outside of the web root', __FILE__),
             'author' => 'Stefan Wanzenried (Wanze)'
         );
@@ -65,7 +65,16 @@ class FieldtypeSecureFile extends FieldtypeFile
         /** @var Field $field */
         $manager = $event->object;
         $field = $event->arguments(0);
-        $storageLocation = rtrim($field->get('storageLocation'), '/') . '/';
+        $storageLocation = $field->get('storageLocation');
+        // Check if storage location is an absolute path or a relative path from the ProcessWire root
+        if (strpos($storageLocation, '.') === 0) {
+            $storageLocation = realpath($this->config->paths('root') . $storageLocation) . DIRECTORY_SEPARATOR;
+        } else {
+            $storageLocation = realpath($storageLocation) . DIRECTORY_SEPARATOR;
+        }
+        if ($storageLocation === false) {
+            throw new WireException("Secure File: Could not resolve the storage location");
+        }
         if (!is_dir($storageLocation) || !is_writable($storageLocation)) {
             // We fail because the user did not manually create the folder where the files are stored.
             // Since we create folders recursively below, be sure that the location is correct.
@@ -141,7 +150,6 @@ class FieldtypeSecureFile extends FieldtypeFile
     public function sanitizeValue(Page $page, Field $field, $value)
     {
         if ($value instanceof PagefilesSecure) return $value;
-
         return parent::sanitizeValue($page, $field, $value);
     }
 
@@ -156,7 +164,6 @@ class FieldtypeSecureFile extends FieldtypeFile
         $pagefiles = new PagefilesSecure($page);
         $pagefiles->setField($field);
         $pagefiles->setTrackChanges(true);
-
         return $pagefiles;
     }
 
