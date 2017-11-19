@@ -35,7 +35,7 @@ class FieldtypeSecureFile extends FieldtypeFile
     {
         return array(
             'title' => __('Secure File', __FILE__),
-            'version' => 102,
+            'version' => 103,
             'summary' => __('Store one or more files in a customized location, e.g. outside of the web root', __FILE__),
             'author' => 'Stefan Wanzenried (Wanze)'
         );
@@ -107,11 +107,18 @@ class FieldtypeSecureFile extends FieldtypeFile
         $markup = preg_replace("/<a class='InputfieldFileName'[^>]*>(.*)<\/a>/", "$1", $markup);
         if ($pagefile->field->get('allowDownloadInAdmin') && $pagefile->isDownloadable()) {
             $segments = array(
-                'id' => $this->wire('input')->get('id'),
+                //'id' => $this->wire('input')->get('id'),
                 self::GET_VAR_DOWNLOAD => urlencode($pagefile->basename),
             );
-            $link = $this->wire('page')->url . '?' . http_build_query($segments);
-            $markup .= "<div class='FieldtypeSecureFileDownload InputfieldFileData'><a href='{$link}'><i class='fa fa-download'></i> " . $this->_('Download File') . "</a></div>";
+            //$link = $this->wire('page')->url . '?' . http_build_query($segments);
+            $link = $pagefile->page->editUrl . '&' . http_build_query($segments);
+            $markup .= "<div class='FieldtypeSecureFileDownload InputfieldFileData'><a href='{$link}'><i class='fa fa-download'></i> " . $this->_('Download File') . "</a>";
+
+            $segments['view'] = 1;
+            //$link = $this->wire('page')->url . '?' . http_build_query($segments);
+            $link = $pagefile->page->editUrl . '&' . http_build_query($segments);
+            $markup .= " | <a href='{$link}' target='_blank'><i class='fa fa-eye'></i> " . $this->_('View File') . "</a>";
+            $markup .= "</div>";
         }
         $event->return = $markup;
     }
@@ -128,6 +135,13 @@ class FieldtypeSecureFile extends FieldtypeFile
         $object = $event->object;
         $page = $object->getPage();
         $basename = $this->wire('sanitizer')->selectorValue(urldecode($this->wire('input')->get(self::GET_VAR_DOWNLOAD)));
+
+        // NEW
+        $options = [];
+        if($this->wire('input')->get('view')) {
+            $options['forceDownload'] = false;
+        }
+
         foreach ($page->fields as $field) {
             if (!$field->type instanceof FieldtypeSecureFile) {
                 continue;
@@ -135,7 +149,7 @@ class FieldtypeSecureFile extends FieldtypeFile
             /** @var PagefileSecure $file */
             $file = $page->get($field->name)->findOne("basename=$basename");
             if ($file) {
-                $file->download(); // Access check performed by this method
+                $file->download($options); // Access check performed by this method
             }
         }
     }
