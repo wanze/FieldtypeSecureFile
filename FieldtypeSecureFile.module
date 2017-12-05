@@ -8,12 +8,13 @@ require_once(__DIR__ . '/PagefileSecure.php');
  *
  * @author Stefan Wanzenried <stefan.wanzenried@gmail.com>
  * @license http://www.gnu.org/licenses/gpl-2.0.txt GNU General Public License, version 2
- * @version 1.0.2
+ * @version 1.0.3
  */
 class FieldtypeSecureFile extends FieldtypeFile
 {
 
     const GET_VAR_DOWNLOAD = 'ftsd';
+    const GET_VAR_VIEW = 'ftsv';
 
     /**
      * @var array
@@ -47,7 +48,7 @@ class FieldtypeSecureFile extends FieldtypeFile
         $this->addHook('PagefilesManager::securePath', $this, 'hookGetSecurePath');
         $this->addHookAfter('InputfieldFile::renderItem', $this, 'hookRenderItem');
         if (isset($_GET[self::GET_VAR_DOWNLOAD])) {
-            $this->addHookBefore('ProcessPageEdit::execute', $this, 'hookDownloadFile');
+            $this->addHookBefore('ProcessPageEdit::execute', $this, 'hookDownloadOrViewFile');
         }
     }
 
@@ -106,18 +107,16 @@ class FieldtypeSecureFile extends FieldtypeFile
         $markup = $event->return;
         $markup = preg_replace("/<a class='InputfieldFileName'[^>]*>(.*)<\/a>/", "$1", $markup);
         if ($pagefile->field->get('allowDownloadInAdmin') && $pagefile->isDownloadable()) {
-            $segments = array(
-                //'id' => $this->wire('input')->get('id'),
+            $segments = [
                 self::GET_VAR_DOWNLOAD => urlencode($pagefile->basename),
-            );
-            //$link = $this->wire('page')->url . '?' . http_build_query($segments);
+            ];
+            // Build the links to download and view a secure file
             $link = $pagefile->page->editUrl . '&' . http_build_query($segments);
             $markup .= "<div class='FieldtypeSecureFileDownload InputfieldFileData'><a href='{$link}'><i class='fa fa-download'></i> " . $this->_('Download File') . "</a>";
-
-            $segments['view'] = 1;
-            //$link = $this->wire('page')->url . '?' . http_build_query($segments);
-            $link = $pagefile->page->editUrl . '&' . http_build_query($segments);
-            $markup .= " | <a href='{$link}' target='_blank'><i class='fa fa-eye'></i> " . $this->_('View File') . "</a>";
+            if ($pagefile->field->get('allowViewInAdmin')) {
+                $link = $pagefile->page->editUrl . '&' . http_build_query(array_merge($segments, [self::GET_VAR_VIEW => 1]));
+                $markup .= " | <a href='{$link}' target='_blank'><i class='fa fa-eye'></i> " . $this->_('View File') . "</a>";
+            }
             $markup .= "</div>";
         }
         $event->return = $markup;
@@ -125,23 +124,19 @@ class FieldtypeSecureFile extends FieldtypeFile
 
 
     /**
-     * Download a secure file, requested from ProcessPageEdit.
+     * Download or View a secure file, requested from ProcessPageEdit.
      *
      * @param HookEvent $event
      */
-    public function hookDownloadFile(HookEvent $event)
+    public function hookDownloadOrViewFile(HookEvent $event)
     {
         /** @var ProcessPageEdit $object */
         $object = $event->object;
         $page = $object->getPage();
         $basename = $this->wire('sanitizer')->selectorValue(urldecode($this->wire('input')->get(self::GET_VAR_DOWNLOAD)));
-
-        // NEW
-        $options = [];
-        if($this->wire('input')->get('view')) {
-            $options['forceDownload'] = false;
-        }
-
+        $downloadOptions = [
+            'forceDownload' => !($this->wire('input')->get(self::GET_VAR_VIEW))
+        ];
         foreach ($page->fields as $field) {
             if (!$field->type instanceof FieldtypeSecureFile) {
                 continue;
@@ -149,7 +144,7 @@ class FieldtypeSecureFile extends FieldtypeFile
             /** @var PagefileSecure $file */
             $file = $page->get($field->name)->findOne("basename=$basename");
             if ($file) {
-                $file->download($options); // Access check performed by this method
+                $file->download($downloadOptions); // Access check performed by this method
             }
         }
     }
@@ -248,6 +243,16 @@ class FieldtypeSecureFile extends FieldtypeFile
         $fDownload->label = $this->_('Allow Download in Admin');
         $fDownload->description = $this->_('If checked, users having a role selected above can download the files when editing a page.');
         $inputfields->insertAfter($fDownload, $fRoles);
+
+        $fView = $this->modules->get('InputfieldCheckbox');
+        $fView->attr('name', 'allowViewInAdmin');
+        $fView->attr('value', $field->get('allowViewInAdmin'));
+        if ($field->get('allowViewInAdmin')) {
+            $fView->attr('checked', 'checked');
+        }
+        $fView->label = $this->_('Allow View in Admin');
+        $fView->description = $this->_('If checked, users can view files directly in the browser beside downloading it when editing a page.');
+        $inputfields->insertAfter($fView, $fDownload);
 
         return $inputfields;
     }
